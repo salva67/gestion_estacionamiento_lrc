@@ -122,6 +122,10 @@ async function cargarPartidos() {
   partidos = await (await fetch('/api/matches')).json();
   const cont = document.getElementById('lista-partidos');
   cont.innerHTML = '';
+  if (!partidos.length) {
+    cont.innerHTML = '<div class="card"><span class="cupo-texto">Todavía no hay partidos con venta abierta. Volvé a consultar más cerca de la fecha.</span></div>';
+    return;
+  }
   for (const p of partidos) {
     const pct = Math.round((p.reservas / p.cupo) * 100);
     const clase = pct >= 100 ? 'lleno' : pct >= 80 ? 'alto' : '';

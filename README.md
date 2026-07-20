@@ -33,6 +33,7 @@ datos de ejemplo; para arrancar de cero, borrar ese archivo y reiniciar.
 | `DATA_FILE` | Ruta del archivo de datos | `data.json` junto al código |
 | `ADMIN_USER` | Usuario de admin y acceso | `club` |
 | `ADMIN_PASS` | Contraseña de admin y acceso | `cambiame` |
+| `SEED` | Con `off`, arranca sin datos de ejemplo (usar en producción) | genera datos de ejemplo |
 
 ## Deploy en Railway (recomendado para uso real)
 

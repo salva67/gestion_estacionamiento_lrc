@@ -110,7 +110,20 @@ function seed() {
   });
 }
 
-if (!fs.existsSync(DATA_FILE)) seed();
+// Con SEED=off la app arranca vacía (para producción); si no, genera datos de ejemplo
+if (!fs.existsSync(DATA_FILE)) {
+  if (String(process.env.SEED).toLowerCase() === 'off') {
+    save({
+      nextMatchId: 1,
+      nextResId: 1,
+      config: { alias: 'CARGAR.ALIAS.DEL.CLUB', titular: 'Cargar titular en Admin' },
+      matches: [],
+      reservations: []
+    });
+  } else {
+    seed();
+  }
+}
 
 // ---------- helpers ----------
 function matchStats(db, m) {
