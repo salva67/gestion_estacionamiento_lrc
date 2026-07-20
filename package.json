@@ -1,0 +1,13 @@
+{
+  "name": "estacionamiento-club",
+  "version": "0.1.0",
+  "description": "Prototipo de gestión de estacionamiento para días de partido",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.0",
+    "qrcode": "^1.5.3"
+  }
+}

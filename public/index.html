@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Estacionamiento — Reservá tu lugar</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header>
+  <div class="inner">
+    <h1>🅿️ Estacionamiento del Club<small>Reservá tu lugar para el partido</small></h1>
+    <nav>
+      <a href="/" class="activo">Reservar</a>
+      <a href="/acceso.html">Acceso</a>
+      <a href="/admin.html">Admin</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <!-- Paso 1: elegir partido -->
+  <section id="paso-partidos">
+    <h2>Próximos partidos</h2>
+    <div id="lista-partidos"></div>
+  </section>
+
+  <!-- Paso 2: datos -->
+  <section id="paso-datos" hidden>
+    <h2>Tus datos</h2>
+    <div class="card">
+      <div id="resumen-partido" class="fecha"></div>
+      <label>Nombre y apellido</label>
+      <input id="f-nombre" placeholder="Juan Pérez" autocomplete="name">
+      <label>Patente</label>
+      <input id="f-patente" placeholder="AB123CD" style="text-transform:uppercase">
+      <label>Vehículo</label>
+      <select id="f-tipo">
+        <option value="auto">Auto</option>
+        <option value="moto">Moto</option>
+      </select>
+      <label>Teléfono (opcional)</label>
+      <input id="f-telefono" placeholder="11-1234-5678" autocomplete="tel">
+      <div id="error-datos" class="error"></div>
+      <button class="btn" onclick="irAPago()">Continuar al pago</button>
+      <button class="btn secundario" onclick="volverInicio()">Volver</button>
+    </div>
+  </section>
+
+  <!-- Paso 3: pago por transferencia al alias -->
+  <section id="paso-pago" hidden>
+    <h2>Pago por transferencia</h2>
+    <div class="card">
+      <div class="fila">
+        <div>
+          <strong id="pago-detalle"></strong>
+          <div class="fecha" id="pago-sub"></div>
+        </div>
+        <div class="precio" id="pago-precio"></div>
+      </div>
+      <p class="fecha" style="margin-top:12px">Transferí el monto desde tu app del banco o Mercado Pago al alias del club:</p>
+      <div class="codigo-grande" id="pago-alias">—</div>
+      <div class="fecha" id="pago-titular" style="text-align:center"></div>
+      <button class="btn secundario" id="btn-copiar" onclick="copiarAlias()">Copiar alias</button>
+      <div id="error-pago" class="error"></div>
+      <button class="btn" id="btn-pagar" onclick="pagar()">Ya hice la transferencia</button>
+      <p class="nota-demo">Tu reserva queda tomada ahora y el club confirma el pago cuando ve la transferencia. Poné tu patente en el concepto para que sea más fácil identificarla.</p>
+    </div>
+  </section>
+
+  <!-- Paso 4: comprobante -->
+  <section id="paso-listo" hidden>
+    <h2>¡Listo! Tu lugar está reservado</h2>
+    <div class="card comprobante">
+      <span class="etiqueta pendiente">PAGO A VERIFICAR POR EL CLUB</span>
+      <div id="listo-detalle" style="margin-top:10px"></div>
+      <img id="listo-qr" alt="Código QR de tu reserva" width="220" height="220">
+      <div class="codigo-grande" id="listo-codigo"></div>
+      <p class="fecha">Mostrá este QR (o decí el código) en el acceso al estacionamiento. Llegá con tiempo: el día de partido el ingreso se congestiona cerca de la hora del inicio.</p>
+      <button class="btn secundario" onclick="volverInicio()">Hacer otra reserva</button>
+    </div>
+  </section>
+
+  <p class="nota-demo">Prototipo de demostración — Estacionamiento del Club · cupo controlado, sin efectivo</p>
+</main>
+
+<script>
+let partidos = [];
+let seleccion = null;   // partido elegido
+let datos = null;       // datos del formulario
+let aliasClub = '';
+
+fetch('/api/config').then(r => r.json()).then(c => {
+  aliasClub = c.alias;
+  document.getElementById('pago-alias').textContent = c.alias;
+  document.getElementById('pago-titular').textContent = 'Titular: ' + c.titular;
+});
+
+function copiarAlias() {
+  navigator.clipboard.writeText(aliasClub).then(() => {
+    const btn = document.getElementById('btn-copiar');
+    btn.textContent = '✔ Copiado';
+    setTimeout(() => { btn.textContent = 'Copiar alias'; }, 2000);
+  });
+}
+
+function fmtFecha(iso) {
+  return new Date(iso).toLocaleString('es-AR', {
+    weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit'
+  });
+}
+function fmtPrecio(n) { return '$' + n.toLocaleString('es-AR'); }
+
+function mostrar(paso) {
+  for (const id of ['paso-partidos', 'paso-datos', 'paso-pago', 'paso-listo']) {
+    document.getElementById(id).hidden = (id !== paso);
+  }
+  window.scrollTo(0, 0);
+}
+
+async function cargarPartidos() {
+  partidos = await (await fetch('/api/matches')).json();
+  const cont = document.getElementById('lista-partidos');
+  cont.innerHTML = '';
+  for (const p of partidos) {
+    const pct = Math.round((p.reservas / p.cupo) * 100);
+    const clase = pct >= 100 ? 'lleno' : pct >= 80 ? 'alto' : '';
+    const agotado = p.disponibles <= 0;
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = `
+      <div class="fila">
+        <h3>vs. ${p.rival}</h3>
+        ${agotado ? '<span class="etiqueta agotado">AGOTADO</span>' : '<span class="etiqueta ok">' + p.disponibles + ' lugares</span>'}
+      </div>
+      <div class="fecha">${fmtFecha(p.fecha)}</div>
+      <div class="barra"><div class="${clase}" style="width:${Math.min(pct, 100)}%"></div></div>
+      <div class="fila">
+        <span class="cupo-texto">${p.reservas} de ${p.cupo} lugares reservados</span>
+        <span class="precio">${fmtPrecio(p.precio)}</span>
+      </div>
+      <button class="btn" ${agotado ? 'disabled' : ''} onclick="elegir(${p.id})">
+        ${agotado ? 'Sin lugares disponibles' : 'Reservar lugar'}
+      </button>`;
+    cont.appendChild(card);
+  }
+}
+
+function elegir(id) {
+  seleccion = partidos.find(p => p.id === id);
+  document.getElementById('resumen-partido').textContent =
+    'vs. ' + seleccion.rival + ' — ' + fmtFecha(seleccion.fecha);
+  document.getElementById('error-datos').textContent = '';
+  mostrar('paso-datos');
+}
+
+function irAPago() {
+  const nombre = document.getElementById('f-nombre').value.trim();
+  const patente = document.getElementById('f-patente').value.trim().toUpperCase();
+  if (!nombre || !patente) {
+    document.getElementById('error-datos').textContent = 'Completá tu nombre y la patente del vehículo.';
+    return;
+  }
+  datos = {
+    matchId: seleccion.id,
+    nombre,
+    patente,
+    tipo: document.getElementById('f-tipo').value,
+    telefono: document.getElementById('f-telefono').value.trim()
+  };
+  document.getElementById('pago-detalle').textContent = '1 lugar — vs. ' + seleccion.rival;
+  document.getElementById('pago-sub').textContent = nombre + ' · ' + patente;
+  document.getElementById('pago-precio').textContent = fmtPrecio(seleccion.precio);
+  document.getElementById('error-pago').textContent = '';
+  mostrar('paso-pago');
+}
+
+async function pagar() {
+  const btn = document.getElementById('btn-pagar');
+  btn.disabled = true;
+  btn.innerHTML = '<div class="spinner"></div>';
+
+  const res = await fetch('/api/reserve', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(datos)
+  });
+  const body = await res.json();
+  btn.disabled = false;
+  btn.textContent = 'Ya hice la transferencia';
+
+  if (!res.ok) {
+    document.getElementById('error-pago').textContent = body.error || 'No se pudo completar la reserva.';
+    return;
+  }
+  document.getElementById('listo-detalle').innerHTML =
+    '<strong>vs. ' + body.rival + '</strong><div class="fecha">' + fmtFecha(body.fecha) +
+    '<br>' + body.nombre + ' · ' + body.patente + '</div>';
+  document.getElementById('listo-qr').src = '/api/qr/' + body.code;
+  document.getElementById('listo-codigo').textContent = body.code;
+  mostrar('paso-listo');
+}
+
+function volverInicio() {
+  for (const id of ['f-nombre', 'f-patente', 'f-telefono']) document.getElementById(id).value = '';
+  cargarPartidos();
+  mostrar('paso-partidos');
+}
+
+cargarPartidos();
+</script>
+</body>
+</html>

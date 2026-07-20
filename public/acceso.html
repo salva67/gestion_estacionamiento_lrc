@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Estacionamiento — Control de acceso</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header>
+  <div class="inner">
+    <h1>🅿️ Estacionamiento del Club<small>Control de acceso — día de partido</small></h1>
+    <nav>
+      <a href="/">Reservar</a>
+      <a href="/acceso.html" class="activo">Acceso</a>
+      <a href="/admin.html">Admin</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <label>Partido</label>
+  <select id="sel-partido" onchange="cambiarPartido()"></select>
+
+  <div class="contador-acceso" id="contador" style="margin-top:14px">
+    <div class="num" id="contador-num">—</div>
+    <div class="lbl">vehículos ingresados</div>
+  </div>
+
+  <label>Buscar reserva</label>
+  <input id="buscador" placeholder="Código, patente o nombre…" autocomplete="off"
+         oninput="buscarDebounced()" style="font-size:1.1rem">
+  <p class="cupo-texto" style="margin-top:6px">En la versión real esta búsqueda se reemplaza por el escaneo del QR con la cámara del celular.</p>
+
+  <div id="resultado-checkin"></div>
+  <div id="resultados"></div>
+
+  <p class="nota-demo">Prototipo de demostración — vista pensada para el celular del personal de acceso</p>
+</main>
+
+<script>
+let partidoId = null;
+let timer = null;
+
+function fmtFecha(iso) {
+  return new Date(iso).toLocaleString('es-AR', {
+    weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'
+  });
+}
+function fmtHora(iso) {
+  return new Date(iso).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
+}
+
+async function cargarPartidos() {
+  const partidos = await (await fetch('/api/matches')).json();
+  const sel = document.getElementById('sel-partido');
+  sel.innerHTML = partidos.map(p =>
+    `<option value="${p.id}">vs. ${p.rival} — ${fmtFecha(p.fecha)}</option>`).join('');
+  partidoId = partidos.length ? partidos[0].id : null;
+  actualizarContador();
+}
+
+async function actualizarContador() {
+  if (partidoId === null) return;
+  const partidos = await (await fetch('/api/matches')).json();
+  const p = partidos.find(x => x.id === partidoId);
+  if (p) {
+    document.getElementById('contador-num').textContent = p.ingresados + ' / ' + p.reservas;
+  }
+}
+
+function cambiarPartido() {
+  partidoId = Number(document.getElementById('sel-partido').value);
+  document.getElementById('buscador').value = '';
+  document.getElementById('resultados').innerHTML = '';
+  document.getElementById('resultado-checkin').innerHTML = '';
+  actualizarContador();
+}
+
+function buscarDebounced() {
+  clearTimeout(timer);
+  timer = setTimeout(buscar, 250);
+}
+
+async function buscar() {
+  const q = document.getElementById('buscador').value.trim();
+  const cont = document.getElementById('resultados');
+  if (q.length < 2) { cont.innerHTML = ''; return; }
+  const rs = await (await fetch(`/api/matches/${partidoId}/search?q=${encodeURIComponent(q)}`)).json();
+  if (!rs.length) {
+    cont.innerHTML = '<div class="card"><span class="cupo-texto">Sin resultados. Verificá el código o la patente — si no tiene reserva, va a venta en puerta.</span></div>';
+    return;
+  }
+  cont.innerHTML = rs.map(r => `
+    <div class="card">
+      <div class="fila">
+        <div>
+          <h3>${r.patente}</h3>
+          <div class="fecha">${r.nombre} · ${r.tipo} · ${r.code}</div>
+          ${r.pago !== 'confirmado' ? '<span class="etiqueta pendiente">PAGO SIN VERIFICAR</span>' : ''}
+        </div>
+        ${r.checkinAt
+          ? `<span class="etiqueta ingresado">INGRESÓ ${fmtHora(r.checkinAt)}</span>`
+          : `<button class="btn" style="width:auto;margin:0" onclick="checkin('${r.code}')">Registrar ingreso</button>`}
+      </div>
+    </div>`).join('');
+}
+
+async function checkin(code) {
+  const res = await fetch('/api/checkin', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code })
+  });
+  const body = await res.json();
+  const cont = document.getElementById('resultado-checkin');
+
+  if (res.ok) {
+    const aviso = body.pago !== 'confirmado'
+      ? '<small>⚠ PAGO SIN VERIFICAR — pedir comprobante de la transferencia</small>'
+      : '';
+    cont.innerHTML = `<div class="resultado-checkin ok">✔ INGRESO REGISTRADO<small>${body.patente} · ${body.nombre}</small>${aviso}</div>`;
+    document.getElementById('buscador').value = '';
+    document.getElementById('resultados').innerHTML = '';
+  } else if (body.error === 'YA_INGRESO') {
+    cont.innerHTML = `<div class="resultado-checkin rechazado">✖ ESTE QR YA FUE USADO<small>Ingresó a las ${fmtHora(body.checkinAt)} — ${body.reserva.patente}</small></div>`;
+  } else {
+    cont.innerHTML = `<div class="resultado-checkin rechazado">✖ ${body.error || 'Error'}</div>`;
+  }
+  actualizarContador();
+  setTimeout(() => { cont.innerHTML = ''; }, 5000);
+}
+
+cargarPartidos();
+</script>
+</body>
+</html>

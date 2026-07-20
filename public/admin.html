@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Estacionamiento — Administración</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header>
+  <div class="inner">
+    <h1>🅿️ Estacionamiento del Club<small>Panel de administración</small></h1>
+    <nav>
+      <a href="/">Reservar</a>
+      <a href="/acceso.html">Acceso</a>
+      <a href="/admin.html" class="activo">Admin</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <h2>Datos para transferencias</h2>
+  <div class="card">
+    <label>Alias de la cuenta del club</label>
+    <input id="c-alias">
+    <label>Titular</label>
+    <input id="c-titular">
+    <button class="btn secundario" id="btn-alias" onclick="guardarConfig()">Guardar</button>
+  </div>
+
+  <h2>Crear partido</h2>
+  <div class="card">
+    <label>Rival</label>
+    <input id="n-rival" placeholder="Deportivo Norte">
+    <label>Fecha y hora</label>
+    <input id="n-fecha" type="datetime-local">
+    <label>Precio por vehículo ($)</label>
+    <input id="n-precio" type="number" value="4000" min="0">
+    <label>Cupo (lugares)</label>
+    <input id="n-cupo" type="number" value="200" min="1">
+    <div id="error-nuevo" class="error"></div>
+    <button class="btn" onclick="crearPartido()">Crear partido</button>
+  </div>
+
+  <h2>Partidos</h2>
+  <div id="lista-admin"></div>
+
+  <p class="nota-demo">Prototipo de demostración — los datos se guardan en el servidor</p>
+</main>
+
+<script>
+function fmtFecha(iso) {
+  return new Date(iso).toLocaleString('es-AR', {
+    weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit'
+  });
+}
+function fmtPrecio(n) { return '$' + n.toLocaleString('es-AR'); }
+
+async function cargarConfig() {
+  const c = await (await fetch('/api/config')).json();
+  document.getElementById('c-alias').value = c.alias;
+  document.getElementById('c-titular').value = c.titular;
+}
+
+async function guardarConfig() {
+  const btn = document.getElementById('btn-alias');
+  await fetch('/api/config', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      alias: document.getElementById('c-alias').value,
+      titular: document.getElementById('c-titular').value
+    })
+  });
+  btn.textContent = '✔ Guardado';
+  setTimeout(() => { btn.textContent = 'Guardar'; }, 2000);
+}
+cargarConfig();
+
+async function cargar() {
+  const partidos = await (await fetch('/api/matches')).json();
+  const cont = document.getElementById('lista-admin');
+  cont.innerHTML = '';
+  for (const p of partidos) {
+    const pct = Math.round((p.reservas / p.cupo) * 100);
+    const clase = pct >= 100 ? 'lleno' : pct >= 80 ? 'alto' : '';
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = `
+      <div class="fila">
+        <h3>vs. ${p.rival}</h3>
+        <span class="cupo-texto">${fmtFecha(p.fecha)}</span>
+      </div>
+      <div class="barra"><div class="${clase}" style="width:${Math.min(pct, 100)}%"></div></div>
+      <div class="cupo-texto">${pct}% del cupo vendido</div>
+      <div class="stats">
+        <div class="stat"><div class="num">${p.reservas}</div><div class="lbl">Reservas</div></div>
+        <div class="stat"><div class="num">${p.disponibles}</div><div class="lbl">Disponibles</div></div>
+        <div class="stat"><div class="num">${p.ingresados}</div><div class="lbl">Ingresados</div></div>
+        <div class="stat"><div class="num">${p.porVerificar}</div><div class="lbl">Pagos a verificar</div></div>
+        <div class="stat"><div class="num">${fmtPrecio(p.recaudacion)}</div><div class="lbl">Recaudado</div></div>
+      </div>
+      <button class="btn secundario" onclick="verReservas(${p.id}, this)">Ver reservas</button>
+      <div class="tabla-scroll" id="tabla-${p.id}" hidden></div>`;
+    cont.appendChild(card);
+  }
+}
+
+async function verReservas(id, btn) {
+  const cont = document.getElementById('tabla-' + id);
+  if (!cont.hidden) { cont.hidden = true; btn.textContent = 'Ver reservas'; return; }
+  const rs = await (await fetch('/api/matches/' + id + '/reservations')).json();
+  // los pagos sin verificar primero, que son los que requieren acción
+  rs.sort((a, b) => (a.pago === b.pago ? a.nombre.localeCompare(b.nombre) : a.pago === 'pendiente' ? -1 : 1));
+  cont.innerHTML = `
+    <table>
+      <thead><tr><th>Código</th><th>Nombre</th><th>Patente</th><th>Pago</th><th>Ingreso</th></tr></thead>
+      <tbody>
+        ${rs.map(r => `<tr>
+          <td>${r.code}</td>
+          <td>${r.nombre}</td>
+          <td>${r.patente}</td>
+          <td>${r.pago === 'confirmado'
+            ? '<span class="etiqueta ok">CONFIRMADO</span>'
+            : `<button class="btn secundario" style="width:auto;margin:0;padding:6px 10px;font-size:0.78rem"
+                 onclick="confirmarPago('${r.code}', ${id}, this)">Confirmar pago</button>`}</td>
+          <td>${r.checkinAt
+            ? '<span class="etiqueta ingresado">INGRESÓ</span>'
+            : '<span class="etiqueta pendiente">PENDIENTE</span>'}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>`;
+  cont.hidden = false;
+  btn.textContent = 'Ocultar reservas';
+}
+
+async function confirmarPago(code, matchId, btn) {
+  btn.disabled = true;
+  const res = await fetch('/api/reservations/' + code + '/confirmar-pago', { method: 'POST' });
+  if (res.ok) {
+    btn.outerHTML = '<span class="etiqueta ok">CONFIRMADO</span>';
+  } else {
+    btn.disabled = false;
+  }
+}
+
+async function crearPartido() {
+  const rival = document.getElementById('n-rival').value.trim();
+  const fecha = document.getElementById('n-fecha').value;
+  const precio = document.getElementById('n-precio').value;
+  const cupo = document.getElementById('n-cupo').value;
+  const err = document.getElementById('error-nuevo');
+  err.textContent = '';
+  if (!rival || !fecha) { err.textContent = 'Completá el rival y la fecha.'; return; }
+
+  const res = await fetch('/api/matches', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ rival, fecha, precio, cupo })
+  });
+  if (!res.ok) { err.textContent = 'No se pudo crear el partido.'; return; }
+  document.getElementById('n-rival').value = '';
+  document.getElementById('n-fecha').value = '';
+  cargar();
+}
+
+cargar();
+</script>
+</body>
+</html>
