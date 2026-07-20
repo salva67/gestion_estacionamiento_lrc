@@ -101,6 +101,7 @@ async function cargar() {
         <div class="stat"><div class="num">${fmtPrecio(p.recaudacion)}</div><div class="lbl">Recaudado</div></div>
       </div>
       <button class="btn secundario" onclick="verReservas(${p.id}, this)">Ver reservas</button>
+      <button class="btn peligro" onclick="eliminarPartido(${p.id}, ${p.reservas})">Eliminar partido</button>
       <div class="tabla-scroll" id="tabla-${p.id}" hidden></div>`;
     cont.appendChild(card);
   }
@@ -132,6 +133,16 @@ async function verReservas(id, btn) {
     </table>`;
   cont.hidden = false;
   btn.textContent = 'Ocultar reservas';
+}
+
+async function eliminarPartido(id, reservas) {
+  const msg = reservas > 0
+    ? `Este partido tiene ${reservas} reservas que también se van a borrar. ¿Eliminarlo igual?`
+    : '¿Eliminar este partido?';
+  if (!confirm(msg)) return;
+  const res = await fetch('/api/matches/' + id, { method: 'DELETE' });
+  if (!res.ok) { alert('No se pudo eliminar el partido.'); return; }
+  cargar();
 }
 
 async function confirmarPago(code, matchId, btn) {

@@ -161,6 +161,16 @@ app.post('/api/matches', requiereClave, (req, res) => {
   res.json(matchStats(db, m));
 });
 
+app.delete('/api/matches/:id', requiereClave, (req, res) => {
+  const db = load();
+  const id = Number(req.params.id);
+  if (!db.matches.some(m => m.id === id)) return res.status(404).json({ error: 'Partido no encontrado' });
+  db.matches = db.matches.filter(m => m.id !== id);
+  db.reservations = db.reservations.filter(r => r.matchId !== id);
+  save(db);
+  res.json({ ok: true });
+});
+
 app.get('/api/matches/:id/reservations', requiereClave, (req, res) => {
   const db = load();
   const id = Number(req.params.id);

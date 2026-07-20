@@ -93,6 +93,8 @@ h2:first-child { margin-top: 0; }
 .btn.secundario { background: #fff; color: var(--verde); border: 1.5px solid var(--verde); }
 .btn.mp { background: #009ee3; }
 .btn.mp:hover { background: #0084bd; }
+.btn.peligro { background: #fff; color: var(--rojo); border: 1.5px solid var(--rojo); }
+.btn.peligro:hover { background: #fdecea; }
 
 .etiqueta {
   display: inline-block;
